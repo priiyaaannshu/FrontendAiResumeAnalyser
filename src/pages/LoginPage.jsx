@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, Sparkles, BarChart3, Shield } from 'lucide-react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Mail, Lock, Eye, EyeOff, Sparkles, BarChart3, Shield, AlertCircle, Loader2 } from 'lucide-react'
+import { loginUser } from '../api/api'
+import { useAuth } from '../context/AuthContext'
 import './LoginPage.css'
 
 /* ── Particle Background ── */
@@ -63,10 +65,38 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const { login } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // Redirect to original page if available, otherwise dashboard
+  const from = location.state?.from?.pathname ?? '/dashboard'
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // Handle login logic
+    setError('')
+
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const data = await loginUser({ email: email.trim(), password })
+      login(data.token, { email: email.trim() })
+      navigate(from, { replace: true })
+    } catch (err) {
+      const msg = err?.response?.data?.message
+        ?? err?.response?.data
+        ?? 'Invalid credentials. Please try again.'
+      setError(typeof msg === 'string' ? msg : 'Login failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -150,8 +180,16 @@ export default function LoginPage() {
             <p>Continue your career journey.</p>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <div className="login-error-banner" role="alert">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Form */}
-          <form className="login-form" onSubmit={handleSubmit}>
+          <form className="login-form" onSubmit={handleSubmit} noValidate>
             {/* Email */}
             <div className="input-group">
               <label htmlFor="login-email">Email</label>
@@ -166,6 +204,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -184,6 +223,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  disabled={loading}
                 />
                 <button
                   type="button"
@@ -212,8 +252,15 @@ export default function LoginPage() {
             </div>
 
             {/* Login Button */}
-            <button type="submit" className="login-btn">
-              Sign In
+            <button type="submit" className="login-btn" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="spin-icon" />
+                  Signing in…
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
 
             {/* Divider */}

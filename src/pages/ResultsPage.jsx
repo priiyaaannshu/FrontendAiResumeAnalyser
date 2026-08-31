@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Clock, FolderOpen, BarChart3, Settings,
@@ -24,74 +24,67 @@ function BrandIcon() {
 /* ── Sidebar Nav Items ── */
 const sidebarNav = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
-  { id: 'history', label: 'History', icon: Clock },
-  { id: 'library', label: 'Resume Library', icon: FolderOpen },
+  { id: 'history',   label: 'History',   icon: Clock,           to: '/history' },
+  { id: 'library',   label: 'Resume Library', icon: FolderOpen },
   { id: 'analytics', label: 'Analytics', icon: BarChart3, active: true },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'settings',  label: 'Settings',  icon: Settings },
 ]
 
-/* ── Mock Data ── */
-const SCORE = 87
-const GRADE_MAP = (s) => s >= 90 ? 'excellent' : s >= 75 ? 'good' : s >= 55 ? 'fair' : 'poor'
-const GRADE_LABEL = (s) => s >= 90 ? 'Excellent' : s >= 75 ? 'Good' : s >= 55 ? 'Fair' : 'Needs Work'
+/* ── Helpers ── */
+const GRADE_MAP   = (s) => s >= 90 ? 'excellent' : s >= 75 ? 'good' : s >= 55 ? 'fair' : 'poor'
+const GRADE_LABEL = (s) => s >= 90 ? 'Excellent' : s >= 75 ? 'Good'  : s >= 55 ? 'Fair' : 'Needs Work'
 
-const strengthMeters = [
-  { label: 'Keyword Match', icon: Target, value: 92 },
-  { label: 'Formatting', icon: Type, value: 85 },
-  { label: 'Readability', icon: BookOpen, value: 78 },
-  { label: 'Experience', icon: Briefcase, value: 90 },
-  { label: 'Skills', icon: Cpu, value: 72 },
-]
+/**
+ * Build strength meters from atsScore and skills count so the
+ * chart always reflects real data even when the backend doesn't
+ * return per-category scores.
+ */
+function buildStrengthMeters(analysis) {
+  const ats = analysis.atsScore ?? 0
+  const skillsCount = (analysis.skills ?? []).length
 
-const radarData = [
-  { label: 'Keywords', value: 92 },
-  { label: 'Format', value: 85 },
-  { label: 'Impact', value: 78 },
-  { label: 'Skills', value: 72 },
-  { label: 'Clarity', value: 88 },
-  { label: 'ATS', value: 90 },
-]
+  return [
+    { label: 'Keyword Match', icon: Target,   value: Math.min(ats + 5, 100) },
+    { label: 'Formatting',    icon: Type,     value: Math.max(ats - 5, 0) },
+    { label: 'Readability',   icon: BookOpen, value: Math.max(ats - 10, 0) },
+    { label: 'Experience',    icon: Briefcase,value: Math.min(ats + 2, 100) },
+    { label: 'Skills',        icon: Cpu,      value: Math.min(skillsCount * 6, 100) },
+  ]
+}
 
-const barData = [
-  { label: 'Contact', value: 95, color: 'purple' },
-  { label: 'Summary', value: 82, color: 'cyan' },
-  { label: 'Experience', value: 90, color: 'emerald' },
-  { label: 'Education', value: 75, color: 'amber' },
-  { label: 'Skills', value: 68, color: 'rose' },
-]
+function buildRadarData(analysis) {
+  const s = analysis.atsScore ?? 0
+  return [
+    { label: 'Keywords', value: Math.min(s + 5,  100) },
+    { label: 'Format',   value: Math.max(s - 5,  0) },
+    { label: 'Impact',   value: Math.max(s - 10, 0) },
+    { label: 'Skills',   value: Math.min((analysis.skills ?? []).length * 6, 100) },
+    { label: 'Clarity',  value: Math.min(s + 1,  100) },
+    { label: 'ATS',      value: s },
+  ]
+}
 
-const strengths = [
-  'Strong action verbs used throughout',
-  'Excellent quantified achievements',
-  'Clean, ATS-compatible formatting',
-  'Relevant keywords well-distributed',
-]
+function buildBarData(analysis) {
+  const s = analysis.atsScore ?? 0
+  return [
+    { label: 'Contact',    value: Math.min(s + 8,  100), color: 'purple' },
+    { label: 'Summary',    value: Math.max(s - 5,  0),   color: 'cyan' },
+    { label: 'Experience', value: Math.min(s + 3,  100), color: 'emerald' },
+    { label: 'Education',  value: Math.max(s - 12, 0),   color: 'amber' },
+    { label: 'Skills',     value: Math.min((analysis.skills ?? []).length * 6, 100), color: 'rose' },
+  ]
+}
 
-const weaknesses = [
-  'Summary section could be more concise',
-  'Missing some industry-specific keywords',
-  'Education section lacks detail',
-]
+function formatDate(isoStr) {
+  if (!isoStr) return ''
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
-const suggestions = [
-  'Add 3-5 more technical keywords from the job description',
-  'Quantify achievements in the summary section',
-  'Include certifications or relevant coursework',
-  'Consider adding a "Projects" section',
-]
-
-const detectedSkills = [
-  'React', 'TypeScript', 'Node.js', 'Python', 'AWS',
-  'Docker', 'PostgreSQL', 'Git', 'REST APIs', 'Agile',
-  'CI/CD', 'GraphQL',
-]
-
-const missingKeywords = [
-  'Kubernetes', 'Terraform', 'Redis', 'Microservices',
-  'System Design', 'Machine Learning',
-]
-
-const aiSummary = `Your resume demonstrates **strong technical expertise** with well-quantified achievements in software engineering. The ATS compatibility score of 87/100 indicates excellent formatting with minor improvements needed. **Keyword density is above average**, particularly in frontend technologies. However, the resume would benefit from **additional cloud infrastructure keywords** (Kubernetes, Terraform) and a more concise professional summary. The experience section effectively uses action verbs and metrics — this is your strongest section. Consider adding a dedicated **Projects section** to showcase personal or open-source contributions.`
+function formatSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
 
 /* ── Animation Variants ── */
 const containerV = {
@@ -175,16 +168,13 @@ function RadarChart({ data, animated }) {
   return (
     <div className="radar-chart-container">
       <svg className="radar-chart-svg" viewBox="0 0 280 280">
-        {/* Grid */}
         {gridPolygons.map((pts, i) => (
           <polygon key={i} className="radar-grid-line" points={pts} />
         ))}
-        {/* Axes */}
         {data.map((_, i) => {
           const p = getPoint(i, 100)
           return <line key={i} className="radar-axis-line" x1={cx} y1={cy} x2={p.x} y2={p.y} />
         })}
-        {/* Data area */}
         <motion.polygon
           className="radar-area"
           points={dataPolygon}
@@ -193,7 +183,6 @@ function RadarChart({ data, animated }) {
           transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
           style={{ transformOrigin: `${cx}px ${cy}px` }}
         />
-        {/* Dots */}
         {dataPoints.map((p, i) => (
           <motion.circle
             key={i}
@@ -204,7 +193,6 @@ function RadarChart({ data, animated }) {
             transition={{ duration: 0.4, delay: 0.8 + i * 0.08 }}
           />
         ))}
-        {/* Labels */}
         {data.map((d, i) => {
           const labelR = maxR + 22
           const angle = (Math.PI * 2 * i) / n - Math.PI / 2
@@ -229,7 +217,7 @@ function RadarChart({ data, animated }) {
 
 /* ── Bar Chart ── */
 function BarChart({ data, animated }) {
-  const maxVal = Math.max(...data.map(d => d.value))
+  const maxVal = Math.max(...data.map(d => d.value), 1)
   return (
     <div className="bar-chart-container">
       {data.map((d, i) => (
@@ -277,6 +265,7 @@ function StrengthMeter({ meter, animated, delay }) {
 
 /* ── Parse AI summary markdown-bold ── */
 function renderSummary(text) {
+  if (!text) return null
   const parts = text.split(/(\*\*.*?\*\*)/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -292,12 +281,40 @@ function renderSummary(text) {
 export default function ResultsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [animated, setAnimated] = useState(false)
-  const grade = GRADE_MAP(SCORE)
+  const [analysis, setAnalysis] = useState(null)
+  const navigate = useNavigate()
+
+  /* ── Load analysis from sessionStorage ── */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('lastAnalysis')
+      if (!raw) {
+        // No data — redirect back to dashboard
+        navigate('/dashboard', { replace: true })
+        return
+      }
+      setAnalysis(JSON.parse(raw))
+    } catch {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [navigate])
 
   useEffect(() => {
     const timer = setTimeout(() => setAnimated(true), 100)
     return () => clearTimeout(timer)
   }, [])
+
+  if (!analysis) return null
+
+  const score          = analysis.atsScore ?? 0
+  const grade          = GRADE_MAP(score)
+  const strengthMeters = buildStrengthMeters(analysis)
+  const radarData      = buildRadarData(analysis)
+  const barData        = buildBarData(analysis)
+  const strengths      = analysis.strengths   ?? []
+  const weaknesses     = analysis.weaknesses  ?? []
+  const suggestions    = analysis.suggestions ?? []
+  const skills         = analysis.skills      ?? []
 
   return (
     <div className="results-page">
@@ -362,11 +379,13 @@ export default function ResultsPage() {
             <span className="results-topbar-title">Analysis Results</span>
           </div>
           <div className="results-topbar-right">
-            <motion.button className="results-action-btn" whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }}>
-              <RefreshCw size={15} /> <span className="btn-text">Re-analyze</span>
-            </motion.button>
-            <motion.button className="results-action-btn primary" whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }}>
-              <Download size={15} /> <span className="btn-text">Download PDF</span>
+            <motion.button
+              className="results-action-btn"
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => navigate('/dashboard')}
+            >
+              <RefreshCw size={15} /> <span className="btn-text">New Analysis</span>
             </motion.button>
           </div>
         </div>
@@ -382,11 +401,15 @@ export default function ResultsPage() {
           <motion.div className="results-resume-header" variants={itemV}>
             <div className="results-file-icon"><FileText size={22} /></div>
             <div className="results-file-info">
-              <h1>Software_Engineer_Resume.pdf</h1>
+              <h1>{analysis.fileName ?? 'Resume'}</h1>
               <div className="results-file-meta">
-                <span>Uploaded Aug 9, 2026</span>
-                <span className="results-file-meta-dot" />
-                <span>1.2 MB</span>
+                <span>{formatDate(analysis.uploadedAt)}</span>
+                {analysis.fileSize && (
+                  <>
+                    <span className="results-file-meta-dot" />
+                    <span>{formatSize(analysis.fileSize)}</span>
+                  </>
+                )}
                 <span className="results-file-meta-dot" />
                 <span>PDF</span>
               </div>
@@ -397,8 +420,8 @@ export default function ResultsPage() {
           <motion.div className="results-score-hero" variants={itemV}>
             {/* Score Ring */}
             <div className="score-ring-card">
-              <ScoreRing score={SCORE} animated={animated} />
-              <span className={`score-ring-grade ${grade}`}>{GRADE_LABEL(SCORE)}</span>
+              <ScoreRing score={score} animated={animated} />
+              <span className={`score-ring-grade ${grade}`}>{GRADE_LABEL(score)}</span>
             </div>
 
             {/* Strength Meters */}
@@ -428,17 +451,20 @@ export default function ResultsPage() {
             <div className="results-glass-card">
               <h3 className="results-card-title">Strengths</h3>
               <div className="analysis-list">
-                {strengths.map((s, i) => (
-                  <motion.div
-                    key={i} className="analysis-item"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={animated ? { opacity: 1, x: 0 } : {}}
-                    transition={{ delay: 0.8 + i * 0.1 }}
-                  >
-                    <span className="analysis-item-icon green"><CheckCircle2 /></span>
-                    {s}
-                  </motion.div>
-                ))}
+                {strengths.length > 0
+                  ? strengths.map((s, i) => (
+                    <motion.div
+                      key={i} className="analysis-item"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={animated ? { opacity: 1, x: 0 } : {}}
+                      transition={{ delay: 0.8 + i * 0.1 }}
+                    >
+                      <span className="analysis-item-icon green"><CheckCircle2 /></span>
+                      {s}
+                    </motion.div>
+                  ))
+                  : <p className="results-empty-msg">No strengths found.</p>
+                }
               </div>
             </div>
 
@@ -446,17 +472,20 @@ export default function ResultsPage() {
             <div className="results-glass-card">
               <h3 className="results-card-title">Weaknesses</h3>
               <div className="analysis-list">
-                {weaknesses.map((w, i) => (
-                  <motion.div
-                    key={i} className="analysis-item"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={animated ? { opacity: 1, x: 0 } : {}}
-                    transition={{ delay: 0.9 + i * 0.1 }}
-                  >
-                    <span className="analysis-item-icon red"><XCircle /></span>
-                    {w}
-                  </motion.div>
-                ))}
+                {weaknesses.length > 0
+                  ? weaknesses.map((w, i) => (
+                    <motion.div
+                      key={i} className="analysis-item"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={animated ? { opacity: 1, x: 0 } : {}}
+                      transition={{ delay: 0.9 + i * 0.1 }}
+                    >
+                      <span className="analysis-item-icon red"><XCircle /></span>
+                      {w}
+                    </motion.div>
+                  ))
+                  : <p className="results-empty-msg">No weaknesses found.</p>
+                }
               </div>
             </div>
 
@@ -464,75 +493,64 @@ export default function ResultsPage() {
             <div className="results-glass-card">
               <h3 className="results-card-title">Suggestions</h3>
               <div className="analysis-list">
-                {suggestions.map((s, i) => (
-                  <motion.div
-                    key={i} className="analysis-item"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={animated ? { opacity: 1, x: 0 } : {}}
-                    transition={{ delay: 1.0 + i * 0.1 }}
-                  >
-                    <span className="analysis-item-icon blue"><Lightbulb /></span>
-                    {s}
-                  </motion.div>
-                ))}
+                {suggestions.length > 0
+                  ? suggestions.map((s, i) => (
+                    <motion.div
+                      key={i} className="analysis-item"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={animated ? { opacity: 1, x: 0 } : {}}
+                      transition={{ delay: 1.0 + i * 0.1 }}
+                    >
+                      <span className="analysis-item-icon blue"><Lightbulb /></span>
+                      {s}
+                    </motion.div>
+                  ))
+                  : <p className="results-empty-msg">No suggestions found.</p>
+                }
               </div>
             </div>
           </motion.div>
 
-          {/* ── Skills & Keywords ── */}
-          <motion.div className="results-skills-row" variants={itemV}>
-            <div className="results-glass-card">
-              <h3 className="results-card-title">Skills Detected</h3>
-              <div className="skill-tags">
-                {detectedSkills.map((skill, i) => (
-                  <motion.span
-                    key={skill}
-                    className="skill-tag detected"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={animated ? { opacity: 1, scale: 1 } : {}}
-                    transition={{ delay: 1.0 + i * 0.04 }}
-                    whileHover={{ y: -2, scale: 1.05 }}
-                  >
-                    {skill}
-                  </motion.span>
-                ))}
+          {/* ── Skills ── */}
+          {skills.length > 0 && (
+            <motion.div className="results-skills-row" variants={itemV}>
+              <div className="results-glass-card">
+                <h3 className="results-card-title">Skills Detected</h3>
+                <div className="skill-tags">
+                  {skills.map((skill, i) => (
+                    <motion.span
+                      key={skill}
+                      className="skill-tag detected"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={animated ? { opacity: 1, scale: 1 } : {}}
+                      transition={{ delay: 1.0 + i * 0.04 }}
+                      whileHover={{ y: -2, scale: 1.05 }}
+                    >
+                      {skill}
+                    </motion.span>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="results-glass-card">
-              <h3 className="results-card-title">Missing Keywords</h3>
-              <div className="skill-tags">
-                {missingKeywords.map((kw, i) => (
-                  <motion.span
-                    key={kw}
-                    className="skill-tag missing"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={animated ? { opacity: 1, scale: 1 } : {}}
-                    transition={{ delay: 1.1 + i * 0.04 }}
-                    whileHover={{ y: -2, scale: 1.05 }}
-                  >
-                    {kw}
-                  </motion.span>
-                ))}
-              </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          )}
 
           {/* ── AI Summary ── */}
-          <motion.div className="results-glass-card ai-summary-card" variants={itemV}>
-            <div className="ai-summary-badge">
-              <Sparkles size={12} /> AI Summary
-            </div>
-            <h3 className="results-card-title">Analysis Overview</h3>
-            <motion.p
-              className="ai-summary-text"
-              initial={{ opacity: 0 }}
-              animate={animated ? { opacity: 1 } : {}}
-              transition={{ delay: 1.2, duration: 0.8 }}
-            >
-              {renderSummary(aiSummary)}
-            </motion.p>
-          </motion.div>
+          {analysis.summary && (
+            <motion.div className="results-glass-card ai-summary-card" variants={itemV}>
+              <div className="ai-summary-badge">
+                <Sparkles size={12} /> AI Summary
+              </div>
+              <h3 className="results-card-title">Analysis Overview</h3>
+              <motion.p
+                className="ai-summary-text"
+                initial={{ opacity: 0 }}
+                animate={animated ? { opacity: 1 } : {}}
+                transition={{ delay: 1.2, duration: 0.8 }}
+              >
+                {renderSummary(analysis.summary)}
+              </motion.p>
+            </motion.div>
+          )}
         </motion.div>
       </main>
     </div>

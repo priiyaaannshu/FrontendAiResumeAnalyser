@@ -10,6 +10,7 @@ import HistoryPage from './pages/HistoryPage'
 import ProfilePage from './pages/ProfilePage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import SettingsPage from './pages/SettingsPage'
+import ProtectedRoute from './components/ProtectedRoute'
 
 /* ── Page transition wrapper ── */
 const pageVariants = {
@@ -38,16 +39,19 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
+        {/* Public routes */}
         <Route path="/" element={<PageTransition><LandingPage /></PageTransition>} />
         <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
         <Route path="/signup" element={<PageTransition><RegisterPage /></PageTransition>} />
-        <Route path="/dashboard" element={<PageTransition><DashboardPage /></PageTransition>} />
-        <Route path="/processing" element={<PageTransition><ProcessingPage /></PageTransition>} />
-        <Route path="/results" element={<PageTransition><ResultsPage /></PageTransition>} />
-        <Route path="/history" element={<PageTransition><HistoryPage /></PageTransition>} />
-        <Route path="/profile" element={<PageTransition><ProfilePage /></PageTransition>} />
-        <Route path="/analytics" element={<PageTransition><AnalyticsPage /></PageTransition>} />
-        <Route path="/settings" element={<PageTransition><SettingsPage /></PageTransition>} />
+
+        {/* Protected routes */}
+        <Route path="/dashboard" element={<ProtectedRoute><PageTransition><DashboardPage /></PageTransition></ProtectedRoute>} />
+        <Route path="/processing" element={<ProtectedRoute><PageTransition><ProcessingPage /></PageTransition></ProtectedRoute>} />
+        <Route path="/results" element={<ProtectedRoute><PageTransition><ResultsPage /></PageTransition></ProtectedRoute>} />
+        <Route path="/history" element={<ProtectedRoute><PageTransition><HistoryPage /></PageTransition></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><PageTransition><ProfilePage /></PageTransition></ProtectedRoute>} />
+        <Route path="/analytics" element={<ProtectedRoute><PageTransition><AnalyticsPage /></PageTransition></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><PageTransition><SettingsPage /></PageTransition></ProtectedRoute>} />
       </Routes>
     </AnimatePresence>
   )
@@ -64,4 +68,3 @@ function App() {
 }
 
 export default App
-

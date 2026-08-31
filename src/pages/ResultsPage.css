@@ -814,3 +814,12 @@
     gap: 8px;
   }
 }
+
+/* ── Empty Message ── */
+.results-empty-msg {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+  font-style: italic;
+  padding: 8px 0;
+}
+

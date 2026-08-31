@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Clock, BarChart3, UserCircle, Settings,
   Search, Bell, Upload, FileText, X, Menu,
-  ChevronRight, HardDrive, FileUp
+  ChevronRight, HardDrive, FileUp, LogOut, AlertCircle
 } from 'lucide-react'
+import { uploadResume } from '../api/api'
+import { useAuth } from '../context/AuthContext'
 import './DashboardPage.css'
 
 /* ── Brand Icon ── */
@@ -22,42 +24,11 @@ function BrandIcon() {
 
 /* ── Sidebar Navigation Items ── */
 const navItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, active: true },
-  { id: 'history', label: 'History', icon: Clock, badge: '12' },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'profile', label: 'Profile', icon: UserCircle },
-  { id: 'settings', label: 'Settings', icon: Settings },
-]
-
-/* ── Mock Recent Uploads ── */
-const recentUploads = [
-  {
-    id: 1,
-    name: 'Software_Engineer_Resume.pdf',
-    type: 'pdf',
-    score: 92,
-    scoreClass: 'high',
-    date: 'Aug 7, 2026',
-    size: '1.2 MB',
-  },
-  {
-    id: 2,
-    name: 'Product_Manager_CV.docx',
-    type: 'docx',
-    score: 78,
-    scoreClass: 'mid',
-    date: 'Aug 5, 2026',
-    size: '890 KB',
-  },
-  {
-    id: 3,
-    name: 'Data_Analyst_Resume_v3.pdf',
-    type: 'pdf',
-    score: 64,
-    scoreClass: 'low',
-    date: 'Aug 2, 2026',
-    size: '1.5 MB',
-  },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard', active: true },
+  { id: 'history',   label: 'History',   icon: Clock,           to: '/history',   badge: null },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3,       to: '/analytics' },
+  { id: 'profile',   label: 'Profile',   icon: UserCircle,      to: '/profile' },
+  { id: 'settings',  label: 'Settings',  icon: Settings,        to: '/settings' },
 ]
 
 /* ── Animation Variants ── */
@@ -83,6 +54,24 @@ const cardHover = {
   transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
 }
 
+/* ── Helpers ── */
+function formatDate(isoStr) {
+  if (!isoStr) return ''
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function scoreClass(score) {
+  if (score >= 80) return 'high'
+  if (score >= 60) return 'mid'
+  return 'low'
+}
+
 /* ── Main Dashboard ── */
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -91,8 +80,23 @@ export default function DashboardPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadFile, setUploadFile] = useState(null)
+  const [uploadError, setUploadError] = useState('')
+  const [recentUploads, setRecentUploads] = useState([])
   const fileInputRef = useRef(null)
-  const progressRef = useRef(null)
+  const abortRef = useRef(null)
+
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  /* ── Load history from sessionStorage ── */
+  useEffect(() => {
+    try {
+      const history = JSON.parse(sessionStorage.getItem('resumix_history') || '[]')
+      setRecentUploads(history.slice(0, 3))
+    } catch {
+      setRecentUploads([])
+    }
+  }, [])
 
   /* ── Drag & Drop handlers ── */
   const handleDragOver = useCallback((e) => {
@@ -105,28 +109,69 @@ export default function DashboardPage() {
     setDragOver(false)
   }, [])
 
-  const startUpload = useCallback((file) => {
+  const startUpload = useCallback(async (file) => {
+    if (!file) return
+
+    // Only allow PDFs (backend restriction)
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Only PDF files are supported. Please upload a .pdf file.')
+      return
+    }
+
     setUploadFile(file)
     setUploading(true)
     setUploadProgress(0)
+    setUploadError('')
 
-    // Simulated upload progress
-    let progress = 0
-    if (progressRef.current) clearInterval(progressRef.current)
-    progressRef.current = setInterval(() => {
-      progress += Math.random() * 12 + 3
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(progressRef.current)
-        setTimeout(() => {
-          setUploading(false)
-          setUploadFile(null)
-          setUploadProgress(0)
-        }, 800)
+    try {
+      const analysis = await uploadResume(file, (progressEvent) => {
+        if (progressEvent.total) {
+          const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          setUploadProgress(Math.min(pct, 90)) // cap at 90% until response
+        }
+      })
+
+      // Analysis complete — store results & navigate
+      setUploadProgress(100)
+
+      // Save to session storage for results page
+      sessionStorage.setItem('lastAnalysis', JSON.stringify({
+        ...analysis,
+        fileName: file.name,
+        fileSize: file.size,
+        uploadedAt: new Date().toISOString(),
+      }))
+
+      // Update local history
+      const existing = JSON.parse(sessionStorage.getItem('resumix_history') || '[]')
+      const newEntry = {
+        id: Date.now(),
+        name: file.name,
+        type: 'pdf',
+        size: formatSize(file.size),
+        date: formatDate(new Date().toISOString()),
+        score: analysis.atsScore ?? 0,
       }
-      setUploadProgress(Math.min(Math.round(progress), 100))
-    }, 300)
-  }, [])
+      const updated = [newEntry, ...existing].slice(0, 20)
+      sessionStorage.setItem('resumix_history', JSON.stringify(updated))
+      setRecentUploads(updated.slice(0, 3))
+
+      setTimeout(() => {
+        setUploading(false)
+        setUploadFile(null)
+        setUploadProgress(0)
+        navigate('/results')
+      }, 500)
+    } catch (err) {
+      const msg = err?.response?.data?.message
+        ?? err?.response?.data
+        ?? 'Upload failed. Please try again.'
+      setUploadError(typeof msg === 'string' ? msg : 'Upload failed. Please check the file and try again.')
+      setUploading(false)
+      setUploadFile(null)
+      setUploadProgress(0)
+    }
+  }, [navigate])
 
   const handleDrop = useCallback((e) => {
     e.preventDefault()
@@ -138,20 +183,19 @@ export default function DashboardPage() {
   const handleFileSelect = useCallback((e) => {
     const file = e.target.files?.[0]
     if (file) startUpload(file)
+    // Reset input so same file can be selected again
+    e.target.value = ''
   }, [startUpload])
 
   const cancelUpload = useCallback(() => {
-    if (progressRef.current) clearInterval(progressRef.current)
+    abortRef.current?.abort()
     setUploading(false)
     setUploadFile(null)
     setUploadProgress(0)
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (progressRef.current) clearInterval(progressRef.current)
-    }
-  }, [])
+  /* ── First letter of user name/email for avatar ── */
+  const avatarLetter = (user?.name ?? user?.email ?? 'U')[0].toUpperCase()
 
   return (
     <div className="dashboard">
@@ -180,25 +224,23 @@ export default function DashboardPage() {
         <nav className="dash-nav">
           <span className="dash-nav-label">Menu</span>
           {navItems.map((item) => (
-            <motion.div
+            <Link
               key={item.id}
+              to={item.to}
               className={`dash-nav-item ${activeNav === item.id ? 'active' : ''}`}
               onClick={() => {
                 setActiveNav(item.id)
                 setSidebarOpen(false)
               }}
-              whileHover={{ x: 2 }}
-              whileTap={{ scale: 0.98 }}
-              transition={{ duration: 0.2 }}
             >
               <item.icon />
               {item.label}
               {item.badge && <span className="dash-nav-badge">{item.badge}</span>}
-            </motion.div>
+            </Link>
           ))}
         </nav>
 
-        {/* Storage */}
+        {/* Storage + Logout */}
         <div className="dash-sidebar-footer">
           <div className="dash-storage-label">
             <span><HardDrive size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: '5px', opacity: 0.6 }} />Storage</span>
@@ -212,6 +254,14 @@ export default function DashboardPage() {
               transition={{ duration: 1.2, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
             />
           </div>
+          <button
+            className="dash-logout-btn"
+            onClick={logout}
+            title="Logout"
+          >
+            <LogOut size={15} />
+            <span>Logout</span>
+          </button>
         </div>
       </motion.aside>
 
@@ -238,7 +288,7 @@ export default function DashboardPage() {
               <Bell size={18} />
               <span className="notif-dot" />
             </button>
-            <div className="dash-avatar">P</div>
+            <div className="dash-avatar" title={user?.name ?? user?.email}>{avatarLetter}</div>
           </div>
         </div>
 
@@ -252,10 +302,29 @@ export default function DashboardPage() {
           {/* Welcome */}
           <motion.div className="dash-welcome" variants={itemVariants}>
             <h1>
-              Welcome back, <span>Priyanshu</span>
+              Welcome back, <span>{user?.name ?? user?.email ?? 'User'}</span>
             </h1>
             <p>Ready to improve your resume?</p>
           </motion.div>
+
+          {/* Upload Error */}
+          <AnimatePresence>
+            {uploadError && (
+              <motion.div
+                className="dash-upload-error"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.3 }}
+              >
+                <AlertCircle size={16} />
+                <span>{uploadError}</span>
+                <button onClick={() => setUploadError('')} aria-label="Dismiss">
+                  <X size={14} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Upload Zone */}
           <motion.div
@@ -264,14 +333,15 @@ export default function DashboardPage() {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            whileHover={{ y: -3 }}
+            onClick={() => !uploading && fileInputRef.current?.click()}
+            whileHover={uploading ? {} : { y: -3 }}
             transition={{ duration: 0.3 }}
+            style={{ cursor: uploading ? 'default' : 'pointer' }}
           >
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.doc"
+              accept=".pdf"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
@@ -286,7 +356,7 @@ export default function DashboardPage() {
 
             <div>
               <div className="upload-text-main">
-                Drag & drop your resume here, or <span>browse</span>
+                Drag &amp; drop your resume here, or <span>browse</span>
               </div>
               <div className="upload-text-sub">
                 Upload your resume and get instant AI-powered analysis
@@ -298,10 +368,6 @@ export default function DashboardPage() {
                 <span className="upload-format-dot pdf" />
                 PDF
               </div>
-              <div className="upload-format-badge">
-                <span className="upload-format-dot docx" />
-                DOCX
-              </div>
               <div className="upload-size-badge">
                 <FileUp size={12} />
                 Max 5 MB
@@ -312,6 +378,7 @@ export default function DashboardPage() {
               className="upload-browse-btn"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
+              disabled={uploading}
               onClick={(e) => {
                 e.stopPropagation()
                 fileInputRef.current?.click()
@@ -342,7 +409,7 @@ export default function DashboardPage() {
                 <div className="upload-progress-info">
                   <div className="upload-progress-name">{uploadFile.name}</div>
                   <div className="upload-progress-meta">
-                    {(uploadFile.size / 1024 / 1024).toFixed(1)} MB · Uploading...
+                    {formatSize(uploadFile.size)} · {uploadProgress < 90 ? 'Uploading...' : 'Analyzing with AI...'}
                   </div>
                   <div className="upload-progress-bar-track">
                     <motion.div
@@ -376,29 +443,39 @@ export default function DashboardPage() {
           </motion.div>
 
           <div className="dash-recent-grid">
-            {recentUploads.map((file, index) => (
+            {recentUploads.length === 0 ? (
               <motion.div
-                key={file.id}
-                className="dash-recent-card"
+                className="dash-empty-state"
                 variants={itemVariants}
-                whileHover={cardHover}
               >
-                <div className="dash-recent-top">
-                  <div className={`dash-recent-file-icon ${file.type}`}>
-                    <FileText size={18} />
-                  </div>
-                  <span className={`dash-recent-score ${file.scoreClass}`}>
-                    {file.score}/100
-                  </span>
-                </div>
-                <div className="dash-recent-name">{file.name}</div>
-                <div className="dash-recent-meta">
-                  <span>{file.date}</span>
-                  <span className="dash-recent-meta-dot" />
-                  <span>{file.size}</span>
-                </div>
+                <FileText size={32} style={{ opacity: 0.3 }} />
+                <p>No uploads yet. Upload your first resume above!</p>
               </motion.div>
-            ))}
+            ) : (
+              recentUploads.map((file) => (
+                <motion.div
+                  key={file.id}
+                  className="dash-recent-card"
+                  variants={itemVariants}
+                  whileHover={cardHover}
+                >
+                  <div className="dash-recent-top">
+                    <div className={`dash-recent-file-icon ${file.type}`}>
+                      <FileText size={18} />
+                    </div>
+                    <span className={`dash-recent-score ${scoreClass(file.score)}`}>
+                      {file.score}/100
+                    </span>
+                  </div>
+                  <div className="dash-recent-name">{file.name}</div>
+                  <div className="dash-recent-meta">
+                    <span>{file.date}</span>
+                    <span className="dash-recent-meta-dot" />
+                    <span>{file.size}</span>
+                  </div>
+                </motion.div>
+              ))
+            )}
           </div>
         </motion.div>
       </main>

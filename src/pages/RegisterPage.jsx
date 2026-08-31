@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { User, Mail, Lock, Eye, EyeOff, Zap, TrendingUp, FileCheck } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { User, Mail, Lock, Eye, EyeOff, Zap, TrendingUp, FileCheck, AlertCircle, Loader2 } from 'lucide-react'
+import { registerUser, loginUser } from '../api/api'
+import { useAuth } from '../context/AuthContext'
 import './RegisterPage.css'
 
 /* ── Particle Background ── */
@@ -85,12 +87,52 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [agreePolicy, setAgreePolicy] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const strength = getPasswordStrength(password)
+  const { login } = useAuth()
+  const navigate = useNavigate()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // Handle registration logic
+    setError('')
+
+    // Client-side validation
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+      setError('Please fill in all fields.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.')
+      return
+    }
+    if (!agreePolicy) {
+      setError('Please agree to the Privacy Policy and Terms of Service.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      // Register the user
+      await registerUser({ name: name.trim(), email: email.trim(), password })
+
+      // Auto-login after successful registration
+      const authData = await loginUser({ email: email.trim(), password })
+      login(authData.token, { name: name.trim(), email: email.trim() })
+      navigate('/dashboard', { replace: true })
+    } catch (err) {
+      const msg = err?.response?.data?.message
+        ?? err?.response?.data
+        ?? 'Registration failed. This email may already be in use.'
+      setError(typeof msg === 'string' ? msg : 'Registration failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -118,8 +160,16 @@ export default function RegisterPage() {
             <p>Start optimizing your career today.</p>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <div className="login-error-banner" role="alert">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Form */}
-          <form className="register-form" onSubmit={handleSubmit}>
+          <form className="register-form" onSubmit={handleSubmit} noValidate>
             {/* Name */}
             <div className="input-group">
               <label htmlFor="register-name">Full Name</label>
@@ -134,6 +184,7 @@ export default function RegisterPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   autoComplete="name"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -152,6 +203,7 @@ export default function RegisterPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -170,6 +222,7 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
+                  disabled={loading}
                 />
                 <button
                   type="button"
@@ -212,6 +265,7 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
+                  disabled={loading}
                 />
                 <button
                   type="button"
@@ -230,6 +284,7 @@ export default function RegisterPage() {
                 type="checkbox"
                 checked={agreePolicy}
                 onChange={(e) => setAgreePolicy(e.target.checked)}
+                disabled={loading}
               />
               <span>
                 I agree to the{' '}
@@ -240,8 +295,15 @@ export default function RegisterPage() {
             </label>
 
             {/* Create Account Button */}
-            <button type="submit" className="register-btn">
-              Create Account
+            <button type="submit" className="register-btn" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="spin-icon" />
+                  Creating account…
+                </>
+              ) : (
+                'Create Account'
+              )}
             </button>
 
             {/* Divider */}
@@ -252,7 +314,7 @@ export default function RegisterPage() {
             </div>
 
             {/* Google */}
-            <button type="button" className="register-google-btn">
+            <button type="button" className="register-google-btn" disabled={loading}>
               <GoogleIcon />
               Continue with Google
             </button>
